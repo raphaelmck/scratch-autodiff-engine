@@ -153,6 +153,27 @@ impl Tensor {
 		}
 		Tensor::new(data, vec![cols, rows])
 	}
+
+	/// Compute the broadcast-compatible output shape, or panic
+	pub fn broadcast_shape(a: &[usize], b: &[usize]) -> Vec<usize> {
+		let ndim = a.len().max(b.len());
+		let mut out = vec![0; ndim];
+
+		for i in 0..ndim {
+			let da = if i < a.len() { a[a.len() - 1 - i] } else { 1 };
+			let db = if i < b.len() { b[b.len() - 1 - i] } else { 1 };
+			out[ndim - 1 - i] = if da == db {
+				da
+			} else if da == 1 {
+				db
+			} else if db == 1 {
+				da
+			} else {
+				panic!("cannot broadcast shapes {:?} and {:?}", a, b)
+			};
+		}
+		out
+	}
 }
 
 #[cfg(test)]
