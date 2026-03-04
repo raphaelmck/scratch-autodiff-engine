@@ -71,23 +71,29 @@ impl Tensor {
 	}
 
 	// Element-wise operations
-	
+		
 	pub fn add(&self, other: &Tensor) -> Tensor {
-		assert_eq!(self.shape, other.shape, "shape must match for add");
-		let data = self.data.iter().zip(&other.data).map(|(a, b)| a + b).collect();
-		Tensor { data, shape: self.shape.clone() }
+		let out_shape = Self::broadcast_shape(&self.shape, &other.shape);
+		let a = self.broadcast_to(&out_shape);
+		let b = other.broadcast_to(&out_shape);
+		let data = a.data.iter().zip(&b.data).map(|(x, y)| x + y).collect();
+		Tensor { data, shape: out_shape }
 	}
 
 	pub fn mul(&self, other: &Tensor) -> Tensor {
-		assert_eq!(self.shape, other.shape, "shape must match for mul");
-		let data = self.data.iter().zip(&other.data).map(|(a, b)| a * b).collect();
-		Tensor { data, shape: self.shape.clone() }
+		let out_shape = Self::broadcast_shape(&self.shape, &other.shape);
+		let a = self.broadcast_to(&out_shape);
+		let b = other.broadcast_to(&out_shape);
+		let data = a.data.iter().zip(&b.data).map(|(x, y)| x * y).collect();
+		Tensor { data, shape: out_shape }
 	}
 
 	pub fn sub(&self, other: &Tensor) -> Tensor {
-		assert_eq!(self.shape, other.shape, "shape must match for sub");
-		let data = self.data.iter().zip(&other.data).map(|(a, b)| a - b).collect();
-		Tensor { data, shape: self.shape.clone() }
+		let out_shape = Self::broadcast_shape(&self.shape, &other.shape);
+		let a = self.broadcast_to(&out_shape);
+		let b = other.broadcast_to(&out_shape);
+		let data = a.data.iter().zip(&b.data).map(|(x, y)| x - y).collect();
+		Tensor { data, shape: out_shape }
 	}
 
 	pub fn neg(&self) -> Tensor {
