@@ -182,9 +182,9 @@ impl Tensor {
 	}
 
 	/// Broadcast this tensor to a target shape, returning a new tensor with data physically expanded
-	pub fn broadcast_to(&self, target: &[uszie]) -> Tensor {
+	pub fn broadcast_to(&self, target: &[usize]) -> Tensor {
 		let ndim = target.len();
-		assrt!(
+		assert!(
 			ndim >= self.ndim(),
 			"target ndim must be >= self ndim"
 		);
@@ -200,7 +200,7 @@ impl Tensor {
 			);
 		}
 
-		let out_len: uszie = target.iter().product();
+		let out_len: usize = target.iter().product();
 		let mut data = vec![0.0; out_len];
 		let out_strides = Self::strides(target);
 		let src_strides = Self::strides(&padded);
@@ -233,7 +233,7 @@ impl Tensor {
 		
 		let mut result = self.clone();
 		for i in 0..ndim {
-			if padded_right[i] == 1 && result.shape[i] != 1 {
+			if padded_target[i] == 1 && result.shape[i] != 1 {
 				result = result.sum_axis(i);
 			}
 		}
@@ -243,17 +243,17 @@ impl Tensor {
 
 	/// Sum along a single axis, keeping the dim as size 1
 	pub fn sum_axis(&self, axis: usize) -> Tensor {
-		assrt!(axis < self.ndim(), "axis out of bounds");
+		assert!(axis < self.ndim(), "axis out of bounds");
 
 		let mut out_shape = self.shape.clone();
 		out_shape[axis] = 1;
-		let out_len: uszie = out_shape.iter().product();
+		let out_len: usize = out_shape.iter().product();
 		let mut data = vec![0.0; out_len];
 
 		let out_strides = Self::strides(&out_shape);
 		let src_strides = Self::strides(&self.shape);
 
-		for flat in 0..self.let() {
+		for flat in 0..self.len() {
 			let mut out_flat = 0;
 			let mut remaining = flat;
 			for i in 0..self.ndim() {
@@ -272,11 +272,11 @@ impl Tensor {
 	pub fn reshape(&self, new_shape: Vec<usize>) -> Tensor {
 		let new_len: usize = new_shape.iter().product();
 		assert_eq!(
-			self.let(), new_len,
+			self.len(), new_len,
 			"cannot reshape {:?} ({} elems) to {:?} ({} elems)",
 			self.shape, self.len(), new_shape, new_len
 		);
-		Tensor::new(self.data.clone(), new_shape_)
+		Tensor::new(self.data.clone(), new_shape)
 	}
 }
 
@@ -387,4 +387,96 @@ mod tests {
         let s = a.sum_all();
         assert_eq!(s.data, vec![10.0]);
     }
+
+	#[test]
+	fn test_broadcast_shape_basic() {
+		assert_eq!(Tensor::broadcast_shape(&[2, 3], &[3]), vec![2, 3]);
+		assert_eq!(Tensor::broadcast_shape(&[2, 3], &[2, 1]), vec![2, 3]);
+		assert_eq!(Tensor::broadcast_shape(&[4, 1, 3], &[5, 3]), vec![4, 5, 3]);
+		assert_eq!(Tensor::broadcast_shape(&[1], &[5, 4]), vec![5, 4]);
+	}
+
+	#[test]
+	#[should_panic(expected = "cannot broadcast")]
+	fn test_broadcast_shape_incompatible() {
+		Tensor::broadcast_shape(&[2, 3], &[4]);
+	}
+
+	#[test]
+	fn test_broadcast_to() {
+		// [1, 2, 3] broadcast to [3, 3]
+		let a = Tensor::new(vec![1.0, 2.0, 3.0], vec![1, 3]);
+		let b = a.broadcast_to(&[3, 3]);
+		assert_eq!(b.shape, vec![3, 3]);
+		assert_eq!(b.data, vec![
+			1.0, 2.0, 3.0,
+			1.0, 2.0, 3.0,
+			1.0, 2.0, 3.0,
+		]);
+	}
+
+	#[test]
+	fn test_broadcast_column() {
+		// [[1], [2]] shape [2,1] -> broadcast to [2,3]
+		let a = Tensor::new(vec![1.0, 2.0], vec![2, 1]);
+		let b = a.broadcast_to(&[2, 3]);
+		assert_eq!(b.data, vec![
+			1.0, 1.0, 1.0,
+			2.0, 2.0, 2.0,
+		]);
+	}
+
+	#[test]
+	fn test_add_broadcast() {
+		// [2, 3] + [3] -> [2, 3]  (bias add, very common in neural nets)
+		let a = Tensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3]);
+		let b = Tensor::new(vec![10.0, 20.0, 30.0], vec![3]);
+		let c = a.add(&b);
+		assert_eq!(c.shape, vec![2, 3]);
+		assert_eq!(c.data, vec![11.0, 22.0, 33.0, 14.0, 25.0, 36.0]);
+	}
+
+	#[test]
+	fn test_sum_axis() {
+		// [[1, 2, 3],
+		//  [4, 5, 6]]  shape [2, 3]
+		let a = Tensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3]);
+
+		// Sum along axis 0 -> [[5, 7, 9]] shape [1, 3]
+		let s0 = a.sum_axis(0);
+		assert_eq!(s0.shape, vec![1, 3]);
+		assert_eq!(s0.data, vec![5.0, 7.0, 9.0]);
+
+		// Sum along axis 1 -> [[6], [15]] shape [2, 1]
+		let s1 = a.sum_axis(1);
+		assert_eq!(s1.shape, vec![2, 1]);
+		assert_eq!(s1.data, vec![6.0, 15.0]);
+	}
+
+	#[test]
+	fn test_unbroadcast() {
+		// Simulate: bias shape [3] was broadcast to [2, 3]
+		// Gradient at [2, 3] must unbroadcast back to [3]
+		let grad = Tensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3]);
+		let unb = grad.unbroadcast(&[3]);
+		assert_eq!(unb.shape, vec![3]);
+		assert_eq!(unb.data, vec![5.0, 7.0, 9.0]); // summed along axis 0
+	}
+
+	#[test]
+	fn test_unbroadcast_column() {
+		// Shape [2,1] was broadcast to [2,3], grad flows back
+		let grad = Tensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3]);
+		let unb = grad.unbroadcast(&[2, 1]);
+		assert_eq!(unb.shape, vec![2, 1]);
+		assert_eq!(unb.data, vec![6.0, 15.0]); // summed along axis 1
+	}
+
+	#[test]
+	fn test_reshape() {
+		let a = Tensor::new(vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0], vec![2, 3]);
+		let b = a.reshape(vec![3, 2]);
+		assert_eq!(b.shape, vec![3, 2]);
+		assert_eq!(b.data, a.data); // same data, different shape
+	}
 }
